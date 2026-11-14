@@ -39,10 +39,11 @@ function normalizeWord(word) {
   return word
     .trim()
     .toUpperCase()
+    .replace(/Ñ/g, '\uE000')
     .normalize('NFD')
-    .replace(/[\u0300-\u0301\u0302-\u0308]/g, '');
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\uE000/g, 'Ñ');
 }
-
 
 // ==========================================
 // CARGAR DICCIONARIOS
