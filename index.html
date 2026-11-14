@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Azure Wordle</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><h1>AZURE WORDLE</h1><button id="new-game" type="button">Nueva partida</button></header>
+    <p id="message" role="status" aria-live="polite">Adivina la palabra de 5 letras en 6 intentos.</p>
+    <section id="board" aria-label="Tablero de Wordle"></section>
+    <section id="keyboard" aria-label="Teclado virtual"></section>
+    <p class="help">Verde: posición correcta · Amarillo: otra posición · Gris: no aparece</p>
+  </main>
+</body>
+</html>
