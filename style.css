@@ -23,3 +23,37 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .key.wide { flex: 1.5; }
 .help { color: #cbd5e1; font-size: .85rem; line-height: 1.5; }
 [hidden] { display: none !important; }
+
+/* ==========================================
+   RELOJ WORDLE DIARIO
+   ========================================== */
+
+.daily-clock {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin: 20px auto;
+    padding: 14px 20px;
+    border-radius: 12px;
+    background: #f3f4f6;
+    text-align: center;
+}
+
+.daily-clock span {
+    font-size: 14px;
+    color: #555;
+}
+
+.daily-clock strong {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: #2e7d32;
+    font-variant-numeric: tabular-nums;
+}
+
+.daily-clock small {
+    font-size: 11px;
+    color: #777;
+}

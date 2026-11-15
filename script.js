@@ -282,3 +282,95 @@ async function loadDictionary() {
 }
 
 loadDictionary();
+
+// ==========================================
+// CUENTA ATRÁS WORDLE DIARIO
+// ==========================================
+
+const MADRID_TIMEZONE = 'Europe/Madrid';
+
+function getMadridDateParts(date) {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: MADRID_TIMEZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23'
+    }).formatToParts(date);
+
+    return Object.fromEntries(
+        parts
+            .filter(part => part.type !== 'literal')
+            .map(part => [part.type, Number(part.value)])
+    );
+}
+
+function getNextWordleTime(now = new Date()) {
+    const madrid = getMadridDateParts(now);
+
+    // Fecha del próximo cambio: hoy a las 06:00,
+    // o mañana si ya hemos pasado esa hora.
+    const targetDay = new Date(Date.UTC(
+        madrid.year,
+        madrid.month - 1,
+        madrid.day + (madrid.hour >= 6 ? 1 : 0)
+    ));
+
+    const year = targetDay.getUTCFullYear();
+    const month = String(targetDay.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(targetDay.getUTCDate()).padStart(2, '0');
+
+    const targetDate = `${year}-${month}-${day}`;
+
+    // Buscar el instante UTC correspondiente a las 06:00
+    // de Madrid. Esto contempla CET y CEST.
+    const approximateUTC = Date.UTC(
+        year,
+        targetDay.getUTCMonth(),
+        targetDay.getUTCDate(),
+        6
+    );
+
+    const approximateParts = getMadridDateParts(
+        new Date(approximateUTC)
+    );
+
+    const madridOffsetHours = approximateParts.hour - 6;
+
+    return new Date(
+        approximateUTC - madridOffsetHours * 60 * 60 * 1000
+    );
+}
+
+function updateCountdown() {
+    const countdown = document.querySelector('#countdown');
+
+    if (!countdown) return;
+
+    const now = new Date();
+    const nextWordle = getNextWordleTime(now);
+
+    const remainingSeconds = Math.max(
+        0,
+        Math.ceil((nextWordle - now) / 1000)
+    );
+
+    const hours = Math.floor(remainingSeconds / 3600);
+    const minutes = Math.floor((remainingSeconds % 3600) / 60);
+    const seconds = remainingSeconds % 60;
+
+    countdown.textContent = [
+        hours,
+        minutes,
+        seconds
+    ].map(value => String(value).padStart(2, '0')).join(':');
+}
+
+// Actualizar inmediatamente
+updateCountdown();
+
+// Actualizar cada segundo
+setInterval(updateCountdown, 1000);
