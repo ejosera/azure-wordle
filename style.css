@@ -2,10 +2,14 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: #101827; color: #f8fafc; }
 main { max-width: 540px; margin: 0 auto; padding: 18px; text-align: center; }
-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #334155; }
+header { border-bottom: 1px solid #334155; }
 h1 { font-size: clamp(1.3rem, 5vw, 2rem); letter-spacing: .08em; }
 button { cursor: pointer; color: inherit; border: 0; border-radius: 5px; background: #475569; padding: 10px; font-weight: 700; }
 button:hover { filter: brightness(1.2); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.modes { display: flex; justify-content: center; gap: 10px; margin-top: 18px; }
+.modes button[aria-pressed="true"] { background: #15803d; }
+#day-info { color: #cbd5e1; font-size: .9rem; min-height: 1.3em; }
 #message { min-height: 2.5em; }
 #board { display: grid; gap: 6px; width: min(100%, 350px); margin: 24px auto; }
 .row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
@@ -18,3 +22,4 @@ button:hover { filter: brightness(1.2); }
 .key { flex: 1; min-width: 0; padding: 14px 2px; font-size: clamp(.65rem, 2.6vw, 1rem); }
 .key.wide { flex: 1.5; }
 .help { color: #cbd5e1; font-size: .85rem; line-height: 1.5; }
+[hidden] { display: none !important; }

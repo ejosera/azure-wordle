@@ -1,395 +1,284 @@
 'use strict';
 
-// ==========================================
-// CONFIGURACIÓN DEL JUEGO
-// ==========================================
-
 const MAX_ATTEMPTS = 6;
 const LENGTH = 5;
-
-// Diccionarios
-let SOLUTIONS = [];
-let ALLOWED_WORDS = new Set();
-
-// Elementos HTML
+const TIME_ZONE = 'Europe/Madrid';
+const DAILY_STORAGE_PREFIX = 'azure-wordle-daily-v2:';
 const board = document.querySelector('#board');
 const keyboard = document.querySelector('#keyboard');
 const message = document.querySelector('#message');
+const dayInfo = document.querySelector('#day-info');
+const newGameButton = document.querySelector('#new-game');
+const dailyButton = document.querySelector('#daily-mode');
+const freeButton = document.querySelector('#free-mode');
+const priority = { absent: 1, present: 2, correct: 3 };
 
-// Estado del juego
-let secret;
-let attempt;
-let guess;
+let solutions = [];
+let allowedWords = new Set();
+let dictionaryVersion = '';
+let mode = 'daily';
+let dayId = '';
+let secret = '';
+let attempt = 0;
+let guess = '';
 let finished = true;
+let history = [];
 let keyStates = {};
 
-// Prioridad de los colores del teclado
-const priority = {
-  absent: 1,
-  present: 2,
-  correct: 3
-};
-
-
-// ==========================================
-// NORMALIZACIÓN DE PALABRAS
-// ==========================================
-
-function normalizeWord(word) {
-  return word
-    .trim()
-    .toUpperCase()
+function normalizeWord(value) {
+  return value.trim().toUpperCase()
     .replace(/Ñ/g, '\uE000')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\uE000/g, 'Ñ');
 }
 
-// ==========================================
-// CARGAR DICCIONARIOS
-// ==========================================
-
-async function loadDictionary() {
-
-  try {
-
-    const [solutionsResponse, allowedResponse] = await Promise.all([
-      fetch('./data/solutions.json'),
-      fetch('./data/allowed.json')
-    ]);
-
-    if (!solutionsResponse.ok || !allowedResponse.ok) {
-      throw new Error('No se pudieron descargar los diccionarios');
-    }
-
-    const solutionsData = await solutionsResponse.json();
-    const allowedData = await allowedResponse.json();
-
-    // Normalizar y eliminar palabras duplicadas
-    SOLUTIONS = [...new Set(
-      solutionsData
-        .map(normalizeWord)
-        .filter(word => word.length === LENGTH && /^[A-ZÑ]+$/.test(word))
-    )];
-
-    const allowed = allowedData
-      .map(normalizeWord)
-      .filter(word => word.length === LENGTH && /^[A-ZÑ]+$/.test(word));
-
-    // Todas las soluciones también deben ser palabras válidas
-    ALLOWED_WORDS = new Set([...allowed, ...SOLUTIONS]);
-
-    if (SOLUTIONS.length === 0) {
-      throw new Error('El diccionario de soluciones está vacío');
-    }
-
-    console.log('Diccionario cargado correctamente');
-    console.log('Soluciones:', SOLUTIONS.length);
-    console.log('Palabras permitidas:', ALLOWED_WORDS.size);
-
-    startGame();
-
-  } catch (error) {
-
-    console.error('Error cargando diccionarios:', error);
-
-    setMessage('Error al cargar el diccionario.');
-
-  }
+function validWord(word) {
+  return /^[A-ZÑ]{5}$/.test(word);
 }
 
+// La fecha civil de Madrid, con cambio a las 06:00, sin depender del huso del dispositivo.
+function madridDayId(now = new Date()) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: TIME_ZONE,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', hourCycle: 'h23'
+    }).formatToParts(now).filter(part => part.type !== 'literal')
+      .map(part => [part.type, part.value])
+  );
+  let date = `${parts.year}-${parts.month}-${parts.day}`;
+  if (Number(parts.hour) < 6) {
+    const previous = new Date(`${date}T12:00:00Z`);
+    previous.setUTCDate(previous.getUTCDate() - 1);
+    date = previous.toISOString().slice(0, 10);
+  }
+  return date;
+}
 
-// ==========================================
-// MENSAJES
-// ==========================================
+// Hash estable: misma fecha + mismo diccionario => misma palabra para todos.
+function hashText(text) {
+  let hash = 2166136261;
+  for (const character of text) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function dailyWord(id) {
+  return solutions[hashText(`wordle:${id}:${dictionaryVersion}`) % solutions.length];
+}
 
 function setMessage(text) {
   message.textContent = text;
 }
 
+function storageKey() {
+  return `${DAILY_STORAGE_PREFIX}${dictionaryVersion}:${dayId}`;
+}
 
-// ==========================================
-// INICIAR PARTIDA
-// ==========================================
-
-function startGame() {
-
-  if (SOLUTIONS.length === 0) {
-    setMessage('El diccionario todavía no está disponible.');
-    return;
+function saveDaily() {
+  if (mode !== 'daily') return;
+  try {
+    localStorage.setItem(storageKey(), JSON.stringify({ history, guess }));
+  } catch (error) {
+    console.warn('No se pudo guardar el progreso:', error);
   }
+}
 
-  // Seleccionar palabra secreta
-  secret = SOLUTIONS[Math.floor(Math.random() * SOLUTIONS.length)];
+function restoreDaily() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey()) || 'null');
+    if (!saved || !Array.isArray(saved.history)) return;
+    const restored = saved.history.map(item => String(item));
+    if (restored.length > MAX_ATTEMPTS || restored.some(word => !validWord(word) || !allowedWords.has(word))) return;
+    // No aceptar jugadas posteriores a una victoria.
+    const winAt = restored.indexOf(secret);
+    if (winAt !== -1 && winAt !== restored.length - 1) return;
+    history = restored;
+    finished = winAt !== -1 || history.length === MAX_ATTEMPTS;
+    const pending = typeof saved.guess === 'string' ? saved.guess : '';
+    guess = !finished && /^[A-ZÑ]{0,5}$/.test(pending) ? pending : '';
+  } catch (error) {
+    console.warn('No se pudo restaurar el progreso:', error);
+  }
+}
 
-  // Reiniciar variables
-  attempt = 0;
-  guess = '';
-  finished = false;
-  keyStates = {};
-
-  // Limpiar tablero y teclado
+function buildBoard() {
   board.replaceChildren();
-  keyboard.replaceChildren();
-
-  // Crear tablero
   for (let row = 0; row < MAX_ATTEMPTS; row++) {
-
     const rowEl = document.createElement('div');
     rowEl.className = 'row';
-
     for (let col = 0; col < LENGTH; col++) {
-
       const tile = document.createElement('div');
       tile.className = 'tile';
-
       rowEl.append(tile);
     }
-
     board.append(rowEl);
   }
+}
 
-  // Crear teclado con Ñ
-  const keyboardRows = [
-    'QWERTYUIOP',
-    'ASDFGHJKLÑ',
-    'ZXCVBNM'
+function buildKeyboard() {
+  keyboard.replaceChildren();
+  const rows = [
+    [...'QWERTYUIOP'],
+    [...'ASDFGHJKLÑ'],
+    ['ENTER', ...'ZXCVBNM', '⌫']
   ];
-
-  for (const keys of keyboardRows) {
-
+  for (const keys of rows) {
     const rowEl = document.createElement('div');
     rowEl.className = 'key-row';
-
-    const rowKeys = keys === 'ZXCVBNM'
-      ? ['ENTER', ...keys, '⌫']
-      : [...keys];
-
-    for (const key of rowKeys) {
-
-      const btn = document.createElement('button');
-
-      btn.type = 'button';
-      btn.className = 'key' + (key.length > 1 ? ' wide' : '');
-      btn.textContent = key;
-      btn.dataset.key = key;
-
-      btn.addEventListener('click', () => handleKey(key));
-
-      rowEl.append(btn);
+    for (const key of keys) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'key' + (key.length > 1 ? ' wide' : '');
+      button.textContent = key;
+      button.dataset.key = key;
+      button.addEventListener('click', () => handleKey(key));
+      rowEl.append(button);
     }
-
     keyboard.append(rowEl);
   }
-
-  setMessage('Adivina la palabra de 5 letras en 6 intentos.');
 }
-
-
-// ==========================================
-// MOSTRAR LETRAS
-// ==========================================
-
-function renderGuess() {
-
-  const tiles = board.children[attempt].children;
-
-  for (let i = 0; i < LENGTH; i++) {
-    tiles[i].textContent = guess[i] || '';
-  }
-}
-
-
-// ==========================================
-// COMPROBAR PALABRA
-// ==========================================
 
 function score(word, answer) {
-
   const result = Array(LENGTH).fill('absent');
   const remaining = {};
-
-  // Primera pasada: letras correctas
   for (let i = 0; i < LENGTH; i++) {
-
-    if (word[i] === answer[i]) {
-
-      result[i] = 'correct';
-
-    } else {
-
-      remaining[answer[i]] = (remaining[answer[i]] || 0) + 1;
-    }
+    if (word[i] === answer[i]) result[i] = 'correct';
+    else remaining[answer[i]] = (remaining[answer[i]] || 0) + 1;
   }
-
-  // Segunda pasada: letras presentes
   for (let i = 0; i < LENGTH; i++) {
-
-    if (result[i] === 'correct') {
-      continue;
-    }
-
+    if (result[i] === 'correct') continue;
     if (remaining[word[i]] > 0) {
-
       result[i] = 'present';
       remaining[word[i]]--;
     }
   }
-
   return result;
 }
 
-
-// ==========================================
-// ENVIAR INTENTO
-// ==========================================
-
-function submitGuess() {
-
-  if (guess.length !== LENGTH) {
-
-    setMessage('Escribe cinco letras.');
-    return;
-  }
-
-  // Comprobar diccionario
-  if (!ALLOWED_WORDS.has(guess)) {
-
-    setMessage('La palabra no está en el diccionario.');
-    return;
-  }
-
-  // Evaluar intento
-  const states = score(guess, secret);
-  const tiles = board.children[attempt].children;
-
+function paintAttempt(rowIndex, word) {
+  const states = score(word, secret);
+  const tiles = board.children[rowIndex].children;
   for (let i = 0; i < LENGTH; i++) {
-
+    tiles[i].textContent = word[i];
     tiles[i].classList.add(states[i]);
-
-    // Actualizar estado del teclado
-    if (
-      (priority[states[i]] || 0) >
-      (priority[keyStates[guess[i]]] || 0)
-    ) {
-
-      keyStates[guess[i]] = states[i];
+    if ((priority[states[i]] || 0) > (priority[keyStates[word[i]]] || 0)) {
+      keyStates[word[i]] = states[i];
     }
-  }
-
-  // Actualizar colores del teclado
-  for (const btn of keyboard.querySelectorAll('[data-key]')) {
-
-    if (keyStates[btn.dataset.key]) {
-
-      btn.classList.add(keyStates[btn.dataset.key]);
-    }
-  }
-
-  attempt++;
-
-  // Comprobar victoria
-  if (guess === secret) {
-
-    finished = true;
-
-    setMessage(
-      `¡Correcto! Lo lograste en ${attempt} intento(s).`
-    );
-
-  } else if (attempt === MAX_ATTEMPTS) {
-
-    finished = true;
-
-    setMessage(
-      `Fin de la partida. La palabra era ${secret}.`
-    );
-
-  } else {
-
-    guess = '';
-
-    setMessage(
-      `Intento ${attempt + 1} de ${MAX_ATTEMPTS}.`
-    );
   }
 }
 
+function paintKeyboard() {
+  for (const button of keyboard.querySelectorAll('[data-key]')) {
+    button.classList.remove('correct', 'present', 'absent');
+    if (keyStates[button.dataset.key]) button.classList.add(keyStates[button.dataset.key]);
+  }
+}
 
-// ==========================================
-// GESTIONAR TECLADO
-// ==========================================
+function renderGuess() {
+  if (finished || attempt >= MAX_ATTEMPTS) return;
+  const tiles = board.children[attempt].children;
+  for (let i = 0; i < LENGTH; i++) tiles[i].textContent = guess[i] || '';
+}
+
+function updateStatus() {
+  if (history.includes(secret)) setMessage(`¡Correcto! Lo lograste en ${history.length} intento(s).`);
+  else if (finished) setMessage(`Fin de la partida. La palabra era ${secret}.`);
+  else setMessage(`Intento ${attempt + 1} de ${MAX_ATTEMPTS}.`);
+}
+
+function redraw() {
+  buildBoard();
+  buildKeyboard();
+  keyStates = {};
+  history.forEach((word, index) => paintAttempt(index, word));
+  attempt = history.length;
+  paintKeyboard();
+  renderGuess();
+  updateStatus();
+}
+
+function startGame() {
+  if (!solutions.length) return;
+  history = [];
+  guess = '';
+  finished = false;
+  if (mode === 'daily') {
+    dayId = madridDayId();
+    secret = dailyWord(dayId);
+    restoreDaily();
+    dayInfo.textContent = `Desafío diario: ${dayId} · Cambia a las 06:00 (Madrid)`;
+  } else {
+    secret = solutions[Math.floor(Math.random() * solutions.length)];
+    dayInfo.textContent = 'Modo libre · Partidas ilimitadas';
+  }
+  newGameButton.hidden = mode !== 'free';
+  dailyButton.setAttribute('aria-pressed', String(mode === 'daily'));
+  freeButton.setAttribute('aria-pressed', String(mode === 'free'));
+  redraw();
+}
+
+function checkDayChange() {
+  if (mode === 'daily' && solutions.length && madridDayId() !== dayId) startGame();
+}
+
+function submitGuess() {
+  if (guess.length !== LENGTH) return setMessage('Escribe cinco letras.');
+  if (!allowedWords.has(guess)) return setMessage('La palabra no está en el diccionario.');
+  history.push(guess);
+  finished = guess === secret || history.length === MAX_ATTEMPTS;
+  guess = '';
+  saveDaily();
+  redraw();
+}
 
 function handleKey(key) {
-
-  if (finished) {
-    return;
-  }
-
-  if (key === 'ENTER') {
-
-    submitGuess();
-    return;
-  }
-
-  if (key === '⌫' || key === 'BACKSPACE') {
-
-    guess = guess.slice(0, -1);
-
-  } else if (/^[A-ZÑ]$/.test(key) && guess.length < LENGTH) {
-
-    guess += key;
-
-  } else {
-
-    return;
-  }
-
+  checkDayChange();
+  if (finished || !solutions.length) return;
+  if (key === 'ENTER') return submitGuess();
+  if (key === '⌫' || key === 'BACKSPACE') guess = guess.slice(0, -1);
+  else if (/^[A-ZÑ]$/.test(key) && guess.length < LENGTH) guess += key;
+  else return;
+  saveDaily();
   renderGuess();
 }
 
-
-// ==========================================
-// TECLADO FÍSICO
-// ==========================================
-
 document.addEventListener('keydown', event => {
-
-  if (
-    event.ctrlKey ||
-    event.altKey ||
-    event.metaKey ||
-    event.repeat
-  ) {
-    return;
-  }
-
-  if (event.key === 'Enter') {
-
-    handleKey('ENTER');
-
-  } else if (event.key === 'Backspace') {
-
-    handleKey('BACKSPACE');
-
-  } else if (/^[a-zA-ZñÑ]$/.test(event.key)) {
-
-    handleKey(event.key.toUpperCase());
-  }
+  if (event.ctrlKey || event.altKey || event.metaKey || event.repeat) return;
+  if (event.key === 'Enter') handleKey('ENTER');
+  else if (event.key === 'Backspace') handleKey('BACKSPACE');
+  else if (/^[a-zA-ZñÑ]$/.test(event.key)) handleKey(event.key.toUpperCase());
 });
 
+newGameButton.addEventListener('click', () => { if (mode === 'free') startGame(); });
+dailyButton.addEventListener('click', () => { mode = 'daily'; startGame(); });
+freeButton.addEventListener('click', () => { mode = 'free'; startGame(); });
+setInterval(checkDayChange, 15000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDayChange(); });
 
-// ==========================================
-// BOTÓN NUEVA PARTIDA
-// ==========================================
-
-document
-  .querySelector('#new-game')
-  .addEventListener('click', startGame);
-
-
-// ==========================================
-// INICIALIZAR APLICACIÓN
-// ==========================================
+async function loadDictionary() {
+  try {
+    const [solutionsResponse, allowedResponse] = await Promise.all([
+      fetch('./data/solutions.json'), fetch('./data/allowed.json')
+    ]);
+    if (!solutionsResponse.ok || !allowedResponse.ok) throw new Error('No se pudieron descargar los diccionarios');
+    const solutionsData = await solutionsResponse.json();
+    const allowedData = await allowedResponse.json();
+    if (!Array.isArray(solutionsData) || !Array.isArray(allowedData)) throw new Error('Formato de diccionario incorrecto');
+    solutions = [...new Set(solutionsData.map(normalizeWord).filter(validWord))];
+    allowedWords = new Set([...allowedData.map(normalizeWord).filter(validWord), ...solutions]);
+    if (!solutions.length) throw new Error('No hay soluciones');
+    // Huella del contenido y orden: si cambia la lista, se crea una nueva versión diaria.
+    dictionaryVersion = hashText(solutions.join('|')).toString(16);
+    console.log(`Soluciones: ${solutions.length}; permitidas: ${allowedWords.size}; versión: ${dictionaryVersion}`);
+    startGame();
+  } catch (error) {
+    console.error(error);
+    setMessage('Error al cargar el diccionario.');
+  }
+}
 
 loadDictionary();

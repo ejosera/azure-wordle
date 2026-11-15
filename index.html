@@ -9,8 +9,14 @@
 </head>
 <body>
   <main>
-    <header><h1>AZURE WORDLE.</h1><button id="new-game" type="button">Nueva partida</button></header>
-    <p id="message" role="status" aria-live="polite">Adivina la palabra de 5 letras en 6 intentos.</p>
+    <header><h1>AZURE WORDLE</h1></header>
+    <nav class="modes" aria-label="Modo de juego">
+      <button id="daily-mode" type="button" aria-pressed="true">📅 Wordle diario</button>
+      <button id="free-mode" type="button" aria-pressed="false">🎮 Partida libre</button>
+    </nav>
+    <p id="day-info"></p>
+    <button id="new-game" type="button" hidden>Nueva partida libre</button>
+    <p id="message" role="status" aria-live="polite">Cargando diccionario…</p>
     <section id="board" aria-label="Tablero de Wordle"></section>
     <section id="keyboard" aria-label="Teclado virtual"></section>
     <p class="help">Verde: posición correcta · Amarillo: otra posición · Gris: no aparece</p>
