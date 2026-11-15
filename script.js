@@ -265,7 +265,7 @@ ${outcome}
 
 ${grid}
 
-🎮 Juega en https://wordle.letteria.es`;
+🎮 Juega en http://wordle.letteria.es`;
 }
 
 // Abrir WhatsApp con el mensaje preparado
