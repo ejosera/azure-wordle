@@ -20,7 +20,8 @@ let mode = 'daily';
 let dayId = '';
 let secret = '';
 let attempt = 0;
-let guess = '';
+let guess = Array(LENGTH).fill('');
+let selectedColumn = 0;
 let finished = true;
 let history = [];
 let keyStates = {};
@@ -81,7 +82,7 @@ function storageKey() {
 function saveDaily() {
   if (mode !== 'daily') return;
   try {
-    localStorage.setItem(storageKey(), JSON.stringify({ history, guess }));
+    localStorage.setItem(storageKey(), JSON.stringify({ history, guess: guess.join('') }));
   } catch (error) {
     console.warn('No se pudo guardar el progreso:', error);
   }
@@ -99,7 +100,10 @@ function restoreDaily() {
     history = restored;
     finished = winAt !== -1 || history.length === MAX_ATTEMPTS;
     const pending = typeof saved.guess === 'string' ? saved.guess : '';
-    guess = !finished && /^[A-ZÑ]{0,5}$/.test(pending) ? pending : '';
+    if (!finished && /^[A-ZÑ ]{0,5}$/.test(pending)) {
+      guess = Array.from({ length: LENGTH }, (_, i) => pending[i] === ' ' ? '' : (pending[i] || ''));
+      selectedColumn = Math.min(Math.max(pending.trimEnd().length, 0), LENGTH - 1);
+    }
   } catch (error) {
     console.warn('No se pudo restaurar el progreso:', error);
   }
@@ -113,6 +117,8 @@ function buildBoard() {
     for (let col = 0; col < LENGTH; col++) {
       const tile = document.createElement('div');
       tile.className = 'tile';
+      tile.dataset.col = String(col);
+      tile.addEventListener('click', () => selectTile(row, col));
       rowEl.append(tile);
     }
     board.append(rowEl);
@@ -178,10 +184,28 @@ function paintKeyboard() {
   }
 }
 
+function selectTile(row, col) {
+  checkDayChange();
+  if (finished || row !== attempt || !solutions.length) return;
+  selectedColumn = col;
+  renderGuess();
+}
+
 function renderGuess() {
+  board.querySelectorAll('.tile').forEach(tile => {
+    tile.classList.remove('selected', 'editable');
+    tile.removeAttribute('aria-current');
+  });
   if (finished || attempt >= MAX_ATTEMPTS) return;
   const tiles = board.children[attempt].children;
-  for (let i = 0; i < LENGTH; i++) tiles[i].textContent = guess[i] || '';
+  for (let i = 0; i < LENGTH; i++) {
+    tiles[i].textContent = guess[i] || '';
+    tiles[i].classList.add('editable');
+    if (i === selectedColumn) {
+      tiles[i].classList.add('selected');
+      tiles[i].setAttribute('aria-current', 'true');
+    }
+  }
 }
 
 function updateStatus() {
@@ -204,7 +228,8 @@ function redraw() {
 function startGame() {
   if (!solutions.length) return;
   history = [];
-  guess = '';
+  guess = Array(LENGTH).fill('');
+  selectedColumn = 0;
   finished = false;
   if (mode === 'daily') {
     dayId = madridDayId();
@@ -226,11 +251,13 @@ function checkDayChange() {
 }
 
 function submitGuess() {
-  if (guess.length !== LENGTH) return setMessage('Escribe cinco letras.');
-  if (!allowedWords.has(guess)) return setMessage('La palabra no está en el diccionario.');
-  history.push(guess);
-  finished = guess === secret || history.length === MAX_ATTEMPTS;
-  guess = '';
+  if (guess.some(letter => !letter)) return setMessage('Completa las cinco casillas.');
+  const word = guess.join('');
+  if (!allowedWords.has(word)) return setMessage('La palabra no está en el diccionario.');
+  history.push(word);
+  finished = word === secret || history.length === MAX_ATTEMPTS;
+  guess = Array(LENGTH).fill('');
+  selectedColumn = 0;
   saveDaily();
   redraw();
 }
@@ -239,9 +266,21 @@ function handleKey(key) {
   checkDayChange();
   if (finished || !solutions.length) return;
   if (key === 'ENTER') return submitGuess();
-  if (key === '⌫' || key === 'BACKSPACE') guess = guess.slice(0, -1);
-  else if (/^[A-ZÑ]$/.test(key) && guess.length < LENGTH) guess += key;
-  else return;
+  if (key === '⌫' || key === 'BACKSPACE') {
+    if (guess[selectedColumn]) {
+      guess[selectedColumn] = '';
+    } else if (selectedColumn > 0) {
+      selectedColumn--;
+      guess[selectedColumn] = '';
+    }
+  } else if (key === 'ARROWLEFT') {
+    selectedColumn = Math.max(0, selectedColumn - 1);
+  } else if (key === 'ARROWRIGHT') {
+    selectedColumn = Math.min(LENGTH - 1, selectedColumn + 1);
+  } else if (/^[A-ZÑ]$/.test(key)) {
+    guess[selectedColumn] = key;
+    if (selectedColumn < LENGTH - 1) selectedColumn++;
+  } else return;
   saveDaily();
   renderGuess();
 }
@@ -250,6 +289,8 @@ document.addEventListener('keydown', event => {
   if (event.ctrlKey || event.altKey || event.metaKey || event.repeat) return;
   if (event.key === 'Enter') handleKey('ENTER');
   else if (event.key === 'Backspace') handleKey('BACKSPACE');
+  else if (event.key === 'ArrowLeft') { event.preventDefault(); handleKey('ARROWLEFT'); }
+  else if (event.key === 'ArrowRight') { event.preventDefault(); handleKey('ARROWRIGHT'); }
   else if (/^[a-zA-ZñÑ]$/.test(event.key)) handleKey(event.key.toUpperCase());
 });
 

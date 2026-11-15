@@ -57,3 +57,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
     font-size: 11px;
     color: #777;
 }
+/* Selección de casillas en la fila activa */
+.tile.editable { cursor: pointer; }
+.tile.selected { border-color: #38bdf8; box-shadow: 0 0 0 2px #38bdf866; }
+.tile.editable:hover:not(.selected) { border-color: #94a3b8; }
