@@ -61,3 +61,18 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .tile.editable { cursor: pointer; }
 .tile.selected { border-color: #38bdf8; box-shadow: 0 0 0 2px #38bdf866; }
 .tile.editable:hover:not(.selected) { border-color: #94a3b8; }
+
+/* ==========================================
+   COMPARTIR RESULTADOS POR WHATSAPP
+   ========================================== */
+
+#share-whatsapp {
+    background: #168a47;
+    color: white;
+    margin: 8px auto 2px;
+    padding: 12px 18px;
+}
+
+#share-whatsapp:hover {
+    background: #11723a;
+}

@@ -7,6 +7,7 @@ const DAILY_STORAGE_PREFIX = 'azure-wordle-daily-v2:';
 const board = document.querySelector('#board');
 const keyboard = document.querySelector('#keyboard');
 const message = document.querySelector('#message');
+const shareButton = document.querySelector('#share-whatsapp');
 const dayInfo = document.querySelector('#day-info');
 const newGameButton = document.querySelector('#new-game');
 const dailyButton = document.querySelector('#daily-mode');
@@ -214,15 +215,92 @@ function updateStatus() {
   else setMessage(`Intento ${attempt + 1} de ${MAX_ATTEMPTS}.`);
 }
 
+// ==========================================
+// COMPARTIR RESULTADOS POR WHATSAPP
+// ==========================================
+
+// Correspondencia entre estados y emojis
+const SHARE_EMOJI = {
+    correct: '🟩',
+    present: '🟨',
+    absent: '⬛'
+};
+
+// Construir el mensaje que compartiremos
+function buildShareText() {
+
+    // No compartir partidas sin terminar
+    if (!finished || !history.length) {
+        return '';
+    }
+
+    // Comprobar si el jugador ha ganado
+    const won = history.includes(secret);
+
+    // Identificar la modalidad
+    const title = mode === 'daily'
+        ? `🟩 Azure Wordle 📅\n${dayId}`
+        : '🟩 Azure Wordle 🎮 Partida libre';
+
+    // Mensaje según el resultado
+    const outcome = won
+        ? `🎉 ¡Lo he conseguido en ${history.length}/6 intentos!`
+        : '😔 ¡Esta vez no lo he conseguido! 0/6';
+
+    // Construir el tablero utilizando emojis
+    const grid = history.map(word => {
+
+        // Evaluar el intento
+        const states = score(word, secret);
+
+        // Convertir estados en emojis
+        return states.map(state => SHARE_EMOJI[state]).join('');
+
+    }).join('\n');
+
+    // Mensaje final
+    return `${title}
+
+${outcome}
+
+${grid}
+
+🎮 Juega en https://wordle.letteria.es`;
+}
+
+// Abrir WhatsApp con el mensaje preparado
+function shareOnWhatsApp() {
+
+    const text = buildShareText();
+
+    if (!text) {
+        return;
+    }
+
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+
+    window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 function redraw() {
-  buildBoard();
-  buildKeyboard();
-  keyStates = {};
-  history.forEach((word, index) => paintAttempt(index, word));
-  attempt = history.length;
-  paintKeyboard();
-  renderGuess();
-  updateStatus();
+
+    buildBoard();
+    buildKeyboard();
+
+    keyStates = {};
+
+    history.forEach((word, index) => {
+        paintAttempt(index, word);
+    });
+
+    attempt = history.length;
+
+    paintKeyboard();
+    renderGuess();
+    updateStatus();
+
+    // Mostrar WhatsApp únicamente cuando termine la partida
+    shareButton.hidden = !finished || history.length === 0;
 }
 
 function startGame() {
@@ -294,6 +372,7 @@ document.addEventListener('keydown', event => {
   else if (/^[a-zA-ZñÑ]$/.test(event.key)) handleKey(event.key.toUpperCase());
 });
 
+shareButton.addEventListener('click', shareOnWhatsApp);
 newGameButton.addEventListener('click', () => { if (mode === 'free') startGame(); });
 dailyButton.addEventListener('click', () => { mode = 'daily'; startGame(); });
 freeButton.addEventListener('click', () => { mode = 'free'; startGame(); });
