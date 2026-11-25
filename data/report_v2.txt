@@ -1,0 +1,16 @@
+
+==========================================
+AZURE WORDLE - DICTIONARY REPORT V2
+==========================================
+
+Idioma:                 es
+Diccionario Hunspell:   es_ES
+
+Palabras originales:    200000
+Candidatas:             19131
+Rechazadas:             13306
+
+Palabras permitidas:     5377
+Posibles soluciones:    3000
+
+==========================================
